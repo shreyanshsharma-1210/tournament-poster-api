@@ -334,6 +334,15 @@ async def extract_tournament_poster(
                 detail="Unsupported image format. Only JPEG, JPG, PNG, and WEBP images are supported.",
             )
         # Corrupted or unsupported image bytes
+        if DEBUG_UPLOAD:
+            return JSONResponse(
+                status_code=422,
+                content={
+                    "error": "Unprocessable Entity",
+                    "detail": "The uploaded file is corrupt or not a supported image format (JPEG, PNG, WEBP).",
+                    "debug": debug_payload,
+                },
+            )
         raise HTTPException(
             status_code=422,
             detail="The uploaded file is corrupt or not a supported image format (JPEG, PNG, WEBP).",
