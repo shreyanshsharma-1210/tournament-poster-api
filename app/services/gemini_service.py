@@ -1,47 +1,14 @@
-from io import BytesIO
 import logging
 import os
 
 from dotenv import load_dotenv
 from google import genai
 from google.genai import errors, types
-from PIL import Image, ImageOps
 
 from app.models import TournamentPosterExtraction
 
 load_dotenv()
 logger = logging.getLogger(__name__)
-
-
-def sanitize_and_normalize_image(image_bytes: bytes) -> tuple[bytes, str]:
-    """
-    Validate and convert any uploaded image (e.g. WhatsApp JPEG, WebP, RGBA PNG)
-    into standard clean RGB JPEG bytes. This prevents decoder failures in Gemini.
-    """
-    try:
-        with Image.open(BytesIO(image_bytes)) as img:
-            # Auto-rotate image according to EXIF orientation tag if present
-            img = ImageOps.exif_transpose(img)
-
-            # Convert to RGB mode
-            if img.mode in ("RGBA", "LA", "P"):
-                rgb_img = Image.new("RGB", img.size, (255, 255, 255))
-                if img.mode == "P":
-                    img = img.convert("RGBA")
-                mask = img.split()[-1] if img.mode in ("RGBA", "LA") else None
-                rgb_img.paste(img, mask=mask)
-            elif img.mode != "RGB":
-                rgb_img = img.convert("RGB")
-            else:
-                rgb_img = img
-
-            output = BytesIO()
-            rgb_img.save(output, format="JPEG", quality=95)
-            return output.getvalue(), "image/jpeg"
-    except Exception as e:
-        logger.warning("Pillow could not decode image bytes: %s", str(e))
-        # Fallback to original bytes if Pillow fails
-        return image_bytes, "image/jpeg"
 
 SYSTEM_PROMPT = """You are an expert sports tournament poster information extraction system.
 
@@ -139,13 +106,10 @@ class GeminiService:
         """
         client = self.get_client()
 
-        # Sanitize and re-encode to clean standard RGB JPEG
-        processed_bytes, normalized_mime = sanitize_and_normalize_image(image_bytes)
-
         try:
             image_part = types.Part.from_bytes(
-                data=processed_bytes,
-                mime_type=normalized_mime,
+                data=image_bytes,
+                mime_type=mime_type,
             )
 
             response = client.models.generate_content(

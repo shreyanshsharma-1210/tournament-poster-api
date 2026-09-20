@@ -435,3 +435,162 @@ def test_additional_information_excludes_slogans():
             "Only Maheshwari Samaj members can participate"
             in data["additional_information"]
         )
+
+
+def test_detect_image_format_and_mime():
+    """Verify detect_image_format_and_mime helper correctly identifies JPEG, PNG, WEBP, and rejects invalid data."""
+    from app.main import detect_image_format_and_mime
+    from PIL import Image
+
+    def make_image_bytes(fmt: str) -> bytes:
+        img = Image.new("RGB", (10, 10), color="blue")
+        buf = io.BytesIO()
+        img.save(buf, format=fmt)
+        return buf.getvalue()
+
+    jpeg_data = make_image_bytes("JPEG")
+    png_data = make_image_bytes("PNG")
+    webp_data = make_image_bytes("WEBP")
+
+    assert detect_image_format_and_mime(jpeg_data) == ("JPEG", "image/jpeg")
+    assert detect_image_format_and_mime(png_data) == ("PNG", "image/png")
+    assert detect_image_format_and_mime(webp_data) == ("WEBP", "image/webp")
+    assert detect_image_format_and_mime(b"corrupted_non_image_data") == (None, None)
+    assert detect_image_format_and_mime(b"") == (None, None)
+
+
+def test_extract_jpeg_mime_detection():
+    """Verify endpoint correctly detects JPEG and passes image/jpeg to Gemini."""
+    from PIL import Image
+
+    img = Image.new("RGB", (10, 10), color="green")
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG")
+    jpeg_bytes = buf.getvalue()
+
+    mock_service = AsyncMock(
+        return_value=TournamentPosterExtraction(
+            tournament=TournamentInfo(name="Cricket Cup", sport="Cricket")
+        )
+    )
+
+    with patch(
+        "app.main.gemini_service.extract_tournament_from_image", new=mock_service
+    ):
+        response = client.post(
+            "/extract",
+            files={"poster": ("sample.jpg", io.BytesIO(jpeg_bytes), "image/jpeg")},
+        )
+        assert response.status_code == 200
+        assert mock_service.call_count == 1
+        _, kwargs = mock_service.call_args
+        assert kwargs["mime_type"] == "image/jpeg"
+        assert kwargs["image_bytes"] == jpeg_bytes
+
+
+def test_extract_png_mime_detection():
+    """Verify endpoint correctly detects PNG and passes image/png to Gemini."""
+    mock_service = AsyncMock(
+        return_value=TournamentPosterExtraction(
+            tournament=TournamentInfo(name="Badminton League", sport="Badminton")
+        )
+    )
+
+    with patch(
+        "app.main.gemini_service.extract_tournament_from_image", new=mock_service
+    ):
+        response = client.post(
+            "/extract",
+            files={"poster": ("sample.png", io.BytesIO(DUMMY_PNG_BYTES), "image/png")},
+        )
+        assert response.status_code == 200
+        assert mock_service.call_count == 1
+        _, kwargs = mock_service.call_args
+        assert kwargs["mime_type"] == "image/png"
+        assert kwargs["image_bytes"] == DUMMY_PNG_BYTES
+
+
+def test_extract_webp_mime_detection():
+    """Verify endpoint correctly detects WEBP and passes image/webp to Gemini."""
+    from PIL import Image
+
+    img = Image.new("RGB", (10, 10), color="red")
+    buf = io.BytesIO()
+    img.save(buf, format="WEBP")
+    webp_bytes = buf.getvalue()
+
+    mock_service = AsyncMock(
+        return_value=TournamentPosterExtraction(
+            tournament=TournamentInfo(name="Football Cup", sport="Football")
+        )
+    )
+
+    with patch(
+        "app.main.gemini_service.extract_tournament_from_image", new=mock_service
+    ):
+        response = client.post(
+            "/extract",
+            files={"poster": ("sample.webp", io.BytesIO(webp_bytes), "image/webp")},
+        )
+        assert response.status_code == 200
+        assert mock_service.call_count == 1
+        _, kwargs = mock_service.call_args
+        assert kwargs["mime_type"] == "image/webp"
+        assert kwargs["image_bytes"] == webp_bytes
+
+
+def test_extract_incorrect_client_mime_type_accepts_valid_image():
+    """Verify endpoint accepts valid image even if client sends incorrect/generic MIME type (e.g. application/octet-stream or image/png for a JPEG)."""
+    from PIL import Image
+
+    img = Image.new("RGB", (10, 10), color="purple")
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG")
+    jpeg_bytes = buf.getvalue()
+
+    mock_service = AsyncMock(
+        return_value=TournamentPosterExtraction(
+            tournament=TournamentInfo(name="Tennis Open", sport="Tennis")
+        )
+    )
+
+    with patch(
+        "app.main.gemini_service.extract_tournament_from_image", new=mock_service
+    ):
+        # Client sends application/octet-stream with WhatsApp JPEG filename
+        response = client.post(
+            "/extract",
+            files={
+                "poster": (
+                    "WhatsApp Image 2026-09-20 at 3.45.35 PM.jpeg",
+                    io.BytesIO(jpeg_bytes),
+                    "application/octet-stream",
+                )
+            },
+        )
+        assert response.status_code == 200
+        assert mock_service.call_count == 1
+        _, kwargs = mock_service.call_args
+        # Server detected correct image/jpeg MIME despite client sending application/octet-stream
+        assert kwargs["mime_type"] == "image/jpeg"
+        assert kwargs["image_bytes"] == jpeg_bytes
+
+
+def test_extract_corrupt_image_returns_422():
+    """Verify endpoint returns HTTP 422 when uploaded bytes are corrupt or not a valid image."""
+    corrupt_bytes = b"corrupted_image_binary_data_1234567890"
+    response = client.post(
+        "/extract",
+        files={
+            "poster": (
+                "poster.jpg",
+                io.BytesIO(corrupt_bytes),
+                "image/jpeg",
+            )
+        },
+    )
+    assert response.status_code == 422
+    data = response.json()
+    assert data["error"] == "Unprocessable Entity"
+    assert "corrupt or not a supported image format" in data["detail"]
+

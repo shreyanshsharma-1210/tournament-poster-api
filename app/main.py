@@ -1,5 +1,4 @@
-"""Main FastAPI application module for Tournament Poster Extraction API."""
-
+from io import BytesIO
 import logging
 import os
 from typing import Annotated
@@ -9,6 +8,7 @@ from fastapi import FastAPI, File, HTTPException, Request, UploadFile, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from PIL import Image
 
 from app.models import (
     ErrorResponse,
@@ -44,6 +44,45 @@ SUPPORTED_EXTENSIONS: set[str] = {
     ".png",
     ".webp",
 }
+
+
+def detect_image_format_and_mime(image_bytes: bytes) -> tuple[str | None, str | None]:
+    """
+    Detect the actual image format and standard MIME type from raw file signatures and contents.
+    Supported formats: JPEG, PNG, WEBP.
+    Returns (detected_format, detected_mime) e.g. ('JPEG', 'image/jpeg') or (None, None).
+    """
+    if not image_bytes or len(image_bytes) < 12:
+        return None, None
+
+    # Fast check via magic bytes / file signatures
+    # JPEG: starts with FF D8 FF
+    if image_bytes.startswith(b"\xff\xd8\xff"):
+        return "JPEG", "image/jpeg"
+
+    # PNG: starts with 89 50 4E 47 0D 0A 1A 0A
+    if image_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "PNG", "image/png"
+
+    # WEBP: starts with 'RIFF' and bytes 8..12 are 'WEBP'
+    if image_bytes.startswith(b"RIFF") and image_bytes[8:12] == b"WEBP":
+        return "WEBP", "image/webp"
+
+    # Fallback verification via Pillow
+    try:
+        with Image.open(BytesIO(image_bytes)) as img:
+            fmt = (img.format or "").upper()
+            if fmt in ("JPEG", "JPG"):
+                return "JPEG", "image/jpeg"
+            elif fmt == "PNG":
+                return "PNG", "image/png"
+            elif fmt == "WEBP":
+                return "WEBP", "image/webp"
+    except Exception:
+        pass
+
+    return None, None
+
 
 # FastAPI App initialization
 app = FastAPI(
@@ -164,6 +203,7 @@ async def health_check():
         400: {"description": "Invalid or empty image file", "model": ErrorResponse},
         413: {"description": "Image file too large", "model": ErrorResponse},
         415: {"description": "Unsupported image format", "model": ErrorResponse},
+        422: {"description": "Corrupt or unprocessable image", "model": ErrorResponse},
         500: {
             "description": "Internal server or API configuration error",
             "model": ErrorResponse,
@@ -188,31 +228,7 @@ async def extract_tournament_poster(
     - **poster**: Image file upload (JPEG, PNG, WEBP, up to max configured MB).
     - Returns structured JSON adhering to the tournament information schema.
     """
-    # 1. Validate MIME type and file extension
-    content_type = poster.content_type.lower() if poster.content_type else ""
-    filename = poster.filename.lower() if poster.filename else ""
-    file_ext = os.path.splitext(filename)[1] if filename else ""
-
-    is_supported_mime = content_type in SUPPORTED_MIME_TYPES
-    is_supported_ext = file_ext in SUPPORTED_EXTENSIONS
-
-    if not is_supported_mime and not is_supported_ext:
-        raise HTTPException(
-            status_code=415,
-            detail="Unsupported image format. Only JPEG, JPG, PNG, and WEBP images are supported.",
-        )
-
-    # Normalize MIME type for Gemini if content_type was generic or missing
-    if not is_supported_mime:
-        mime_map = {
-            ".jpg": "image/jpeg",
-            ".jpeg": "image/jpeg",
-            ".png": "image/png",
-            ".webp": "image/webp",
-        }
-        content_type = mime_map.get(file_ext, "image/jpeg")
-
-    # 2. Read file content and validate size
+    # 1. Read file content and validate size
     try:
         image_bytes = await poster.read()
     except Exception as e:
@@ -222,24 +238,64 @@ async def extract_tournament_poster(
             detail="Failed to read the uploaded image file.",
         ) from e
 
-    # 3. Validate non-empty file
+    # 2. Validate non-empty file
     if not image_bytes or len(image_bytes) == 0:
         raise HTTPException(
             status_code=400,
             detail="Uploaded file is empty. Please upload a valid image file.",
         )
 
-    # 4. Validate max file size
+    # 3. Validate max file size
     if len(image_bytes) > MAX_FILE_SIZE_BYTES:
         raise HTTPException(
             status_code=413,
             detail=f"Image file exceeds maximum allowable size of {MAX_FILE_SIZE_MB}MB.",
         )
 
-    # 5. Extract structured data via Gemini Service
+    # 4. Extract metadata and detect actual format from bytes
+    client_content_type = poster.content_type if poster.content_type else ""
+    filename = poster.filename if poster.filename else ""
+    file_ext = os.path.splitext(filename.lower())[1] if filename else ""
+
+    detected_format, detected_mime = detect_image_format_and_mime(image_bytes)
+
+    # 5. Diagnostic logging ONLY (do not expose in API response or log sensitive data)
+    logger.info(
+        "Received upload:\n"
+        "filename=%s\n"
+        "client_content_type=%s\n"
+        "size=%d\n"
+        "detected_format=%s\n"
+        "detected_mime=%s",
+        filename,
+        client_content_type,
+        len(image_bytes),
+        detected_format,
+        detected_mime,
+    )
+
+    # 6. Validate detected image format
+    if not detected_format or not detected_mime:
+        # Check if client uploaded an explicitly unsupported non-image extension/mime (e.g. .txt, text/plain)
+        if (file_ext and file_ext not in SUPPORTED_EXTENSIONS) or (
+            client_content_type
+            and not client_content_type.startswith("image/")
+            and client_content_type not in SUPPORTED_MIME_TYPES
+        ):
+            raise HTTPException(
+                status_code=415,
+                detail="Unsupported image format. Only JPEG, JPG, PNG, and WEBP images are supported.",
+            )
+        # Corrupted or unsupported image bytes
+        raise HTTPException(
+            status_code=422,
+            detail="The uploaded file is corrupt or not a supported image format (JPEG, PNG, WEBP).",
+        )
+
+    # 7. Extract structured data via Gemini Service using detected MIME type and original bytes
     extraction_result = await gemini_service.extract_tournament_from_image(
         image_bytes=image_bytes,
-        mime_type=content_type,
+        mime_type=detected_mime,
     )
 
     return extraction_result
