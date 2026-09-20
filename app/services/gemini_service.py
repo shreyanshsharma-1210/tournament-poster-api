@@ -1,8 +1,8 @@
 """Gemini Vision Service for extracting structured tournament details from posters."""
 
-import os
 import logging
-from typing import Optional
+import os
+
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
@@ -72,7 +72,8 @@ USER_PROMPT = "Please analyze this tournament poster image carefully and extract
 
 class GeminiServiceException(Exception):
     """Base exception for Gemini service errors."""
-    def __init__(self, message: str, status_code: int = 500, detail: Optional[str] = None):
+
+    def __init__(self, message: str, status_code: int = 500, detail: str | None = None):
         super().__init__(message)
         self.message = message
         self.status_code = status_code
@@ -82,24 +83,26 @@ class GeminiServiceException(Exception):
 class GeminiService:
     """Service to interact with Google Gemini multimodal models."""
 
-    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
+    def __init__(self, api_key: str | None = None, model: str | None = None):
         self.api_key = api_key or os.getenv("GEMINI_API_KEY", "").strip()
         self.model = model or os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip()
 
     def get_client(self) -> genai.Client:
         """Initialize and return the Google GenAI client."""
-        if not self.api_key or self.api_key == "your_key_here" or self.api_key == "your_gemini_api_key_here":
+        if (
+            not self.api_key
+            or self.api_key == "your_key_here"
+            or self.api_key == "your_gemini_api_key_here"
+        ):
             raise GeminiServiceException(
                 message="Gemini API key is not configured",
                 status_code=500,
-                detail="GEMINI_API_KEY environment variable is missing or unset. Please set a valid Gemini API key in your .env file."
+                detail="GEMINI_API_KEY environment variable is missing or unset. Please set a valid Gemini API key in your .env file.",
             )
         return genai.Client(api_key=self.api_key)
 
     async def extract_tournament_from_image(
-        self,
-        image_bytes: bytes,
-        mime_type: str
+        self, image_bytes: bytes, mime_type: str
     ) -> TournamentPosterExtraction:
         """
         Send tournament poster image directly to Gemini vision and return structured extraction.
@@ -123,7 +126,9 @@ class GeminiService:
                 ),
             )
 
-            if response.parsed and isinstance(response.parsed, TournamentPosterExtraction):
+            if response.parsed and isinstance(
+                response.parsed, TournamentPosterExtraction
+            ):
                 return response.parsed
 
             if response.text:
@@ -132,40 +137,46 @@ class GeminiService:
             raise GeminiServiceException(
                 message="Empty extraction response",
                 status_code=502,
-                detail="Gemini API returned an empty response. Please check image clarity and try again."
+                detail="Gemini API returned an empty response. Please check image clarity and try again.",
             )
 
         except APIError as e:
             logger.error("Gemini API Error: %s", str(e))
             error_message = str(e)
-            if "API_KEY_INVALID" in error_message or "invalid API key" in error_message.lower():
+            if (
+                "API_KEY_INVALID" in error_message
+                or "invalid API key" in error_message.lower()
+            ):
                 raise GeminiServiceException(
                     message="Invalid Gemini API Key",
                     status_code=401,
-                    detail="The provided Gemini API key is invalid or unauthorized."
+                    detail="The provided Gemini API key is invalid or unauthorized.",
                 ) from e
-            elif "RESOURCE_EXHAUSTED" in error_message or "quota" in error_message.lower():
+            elif (
+                "RESOURCE_EXHAUSTED" in error_message
+                or "quota" in error_message.lower()
+            ):
                 raise GeminiServiceException(
                     message="Gemini API Quota Exceeded",
                     status_code=429,
-                    detail="Gemini API rate limit or quota exceeded. Please try again later."
+                    detail="Gemini API rate limit or quota exceeded. Please try again later.",
                 ) from e
             else:
                 raise GeminiServiceException(
                     message="Gemini API Error",
                     status_code=502,
-                    detail=f"Error communicating with Gemini Vision API: {e.message if hasattr(e, 'message') else str(e)}"
+                    detail=f"Error communicating with Gemini Vision API: {e.message if hasattr(e, 'message') else str(e)}",
                 ) from e
 
         except GeminiServiceException:
             raise
 
         except Exception as e:
-            logger.error("Unexpected error during Gemini extraction: %s", str(e), exc_info=True)
+            logger.exception("Unexpected error during Gemini extraction")
             raise GeminiServiceException(
                 message="Poster extraction failed",
                 status_code=500,
-                detail=f"An unexpected error occurred while processing the poster: {str(e)}"
+                detail=f"An unexpected error occurred while processing the poster: {e!s}",
             ) from e
 
 

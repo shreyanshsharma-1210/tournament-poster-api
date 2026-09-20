@@ -2,20 +2,21 @@
 
 import io
 from unittest.mock import AsyncMock, patch
+
 from fastapi.testclient import TestClient
 
 from app.main import app
 from app.models import (
-    TournamentPosterExtraction,
-    TournamentInfo,
-    DatesInfo,
-    LocationInfo,
-    RegistrationInfo,
     AuctionInfo,
-    ParticipationInfo,
-    FeesInfo,
-    PrizesInfo,
+    DatesInfo,
     ExtractionMeta,
+    FeesInfo,
+    LocationInfo,
+    ParticipationInfo,
+    PrizesInfo,
+    RegistrationInfo,
+    TournamentInfo,
+    TournamentPosterExtraction,
 )
 
 client = TestClient(app)
@@ -34,7 +35,7 @@ def test_root_endpoint():
     assert response.status_code == 200
     assert response.json() == {
         "message": "Tournament Poster Extraction API",
-        "status": "running"
+        "status": "running",
     }
 
 
@@ -42,9 +43,7 @@ def test_health_endpoint():
     """Verify health endpoint returns status healthy."""
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.json() == {
-        "status": "healthy"
-    }
+    assert response.json() == {"status": "healthy"}
 
 
 def test_extract_missing_file():
@@ -61,7 +60,7 @@ def test_extract_invalid_mime_type():
     file_content = b"This is a text file, not an image."
     response = client.post(
         "/extract",
-        files={"poster": ("document.txt", io.BytesIO(file_content), "text/plain")}
+        files={"poster": ("document.txt", io.BytesIO(file_content), "text/plain")},
     )
     assert response.status_code == 415
     data = response.json()
@@ -74,7 +73,7 @@ def test_extract_empty_file():
     empty_content = b""
     response = client.post(
         "/extract",
-        files={"poster": ("poster.jpg", io.BytesIO(empty_content), "image/jpeg")}
+        files={"poster": ("poster.jpg", io.BytesIO(empty_content), "image/jpeg")},
     )
     assert response.status_code == 400
     data = response.json()
@@ -88,7 +87,7 @@ def test_extract_file_too_large():
         large_content = b"x" * 20
         response = client.post(
             "/extract",
-            files={"poster": ("poster.png", io.BytesIO(large_content), "image/png")}
+            files={"poster": ("poster.png", io.BytesIO(large_content), "image/png")},
         )
         assert response.status_code == 413
         data = response.json()
@@ -101,7 +100,7 @@ def test_extract_missing_api_key():
     with patch("app.services.gemini_service.gemini_service.api_key", ""):
         response = client.post(
             "/extract",
-            files={"poster": ("poster.png", io.BytesIO(DUMMY_PNG_BYTES), "image/png")}
+            files={"poster": ("poster.png", io.BytesIO(DUMMY_PNG_BYTES), "image/png")},
         )
         assert response.status_code == 500
         data = response.json()
@@ -116,20 +115,20 @@ def test_extract_success_with_mocked_gemini():
             sport="Cricket",
             format="Turf Cricket Tournament",
             season="Season 3",
-            organizer="Apex Sports Club"
+            organizer="Apex Sports Club",
         ),
         dates=DatesInfo(
             start_date="2026-11-29",
             end_date="2026-12-05",
             registration_deadline="2026-11-20",
-            auction_date="2026-11-25"
+            auction_date="2026-11-25",
         ),
         location=LocationInfo(
             venue="Skyline Turf Arena",
             address="Plot 42, Cyber Hub Road",
             city="Bengaluru",
             state="Karnataka",
-            country="India"
+            country="India",
         ),
         registration=RegistrationInfo(
             available=True,
@@ -139,50 +138,47 @@ def test_extract_success_with_mocked_gemini():
             registration_fee="₹5,000 per team",
             contact_person="Rahul Sharma",
             contact_numbers=["9876543210", "9123456789"],
-            email="contact@apexsports.com"
+            email="contact@apexsports.com",
         ),
         auction=AuctionInfo(
             required=True,
             date="2026-11-25",
             venue="Grand Palace Hall",
-            address="MG Road, Bengaluru"
+            address="MG Road, Bengaluru",
         ),
         participation=ParticipationInfo(
             number_of_teams=16,
             number_of_players=11,
             eligibility="Open to all players aged 18+",
             team_requirements="Minimum 11 players per squad",
-            player_requirements="Aadhaar card mandatory"
+            player_requirements="Aadhaar card mandatory",
         ),
         fees=FeesInfo(
             registration_fee="₹5,000",
             team_fee="₹5,000",
             player_fee=None,
-            auction_fee="₹1,000"
+            auction_fee="₹1,000",
         ),
         prizes=PrizesInfo(
             first_prize="₹1,00,000",
             second_prize="₹50,000",
             third_prize="₹25,000",
-            other_prizes=["Man of the Match - ₹1,000", "Best Bowler - Trophy"]
+            other_prizes=["Man of the Match - ₹1,000", "Best Bowler - Trophy"],
         ),
         additional_information=[
             "100 players will be selected through auction",
-            "10 overs per match with red tennis ball"
+            "10 overs per match with red tennis ball",
         ],
-        extraction=ExtractionMeta(
-            confidence=0.95,
-            fields_needing_review=[]
-        )
+        extraction=ExtractionMeta(confidence=0.95, fields_needing_review=[]),
     )
 
     with patch(
         "app.main.gemini_service.extract_tournament_from_image",
-        new=AsyncMock(return_value=mock_extracted_data)
+        new=AsyncMock(return_value=mock_extracted_data),
     ):
         response = client.post(
             "/extract",
-            files={"poster": ("poster.png", io.BytesIO(DUMMY_PNG_BYTES), "image/png")}
+            files={"poster": ("poster.png", io.BytesIO(DUMMY_PNG_BYTES), "image/png")},
         )
 
         assert response.status_code == 200
@@ -208,11 +204,16 @@ def test_extract_success_with_mocked_gemini():
         assert data["fees"]["registration_fee"] == "₹5,000"
         assert data["fees"]["auction_fee"] == "₹1,000"
         assert data["prizes"]["first_prize"] == "₹1,00,000"
-        assert data["prizes"]["other_prizes"] == ["Man of the Match - ₹1,000", "Best Bowler - Trophy"]
+        assert data["prizes"]["other_prizes"] == [
+            "Man of the Match - ₹1,000",
+            "Best Bowler - Trophy",
+        ]
 
         # Check participation
         assert data["participation"]["number_of_teams"] == 16
-        assert data["participation"]["team_requirements"] == "Minimum 11 players per squad"
+        assert (
+            data["participation"]["team_requirements"] == "Minimum 11 players per squad"
+        )
 
         # Check extraction meta
         assert data["extraction"]["confidence"] == 0.95
@@ -225,11 +226,17 @@ def test_registration_methods_array():
         registration=RegistrationInfo(
             available=True,
             methods=["Call", "WhatsApp", "QR Code"],
-            qr_code_present=True
+            qr_code_present=True,
         )
     )
-    with patch("app.main.gemini_service.extract_tournament_from_image", new=AsyncMock(return_value=mock_data)):
-        response = client.post("/extract", files={"poster": ("poster.png", io.BytesIO(DUMMY_PNG_BYTES), "image/png")})
+    with patch(
+        "app.main.gemini_service.extract_tournament_from_image",
+        new=AsyncMock(return_value=mock_data),
+    ):
+        response = client.post(
+            "/extract",
+            files={"poster": ("poster.png", io.BytesIO(DUMMY_PNG_BYTES), "image/png")},
+        )
         assert response.status_code == 200
         data = response.json()
         assert isinstance(data["registration"]["methods"], list)
@@ -240,13 +247,17 @@ def test_missing_registration_deadline_is_null():
     """Verify registration deadline returns null when not explicitly stated."""
     mock_data = TournamentPosterExtraction(
         dates=DatesInfo(
-            start_date="2026-11-29",
-            end_date="2026-12-05",
-            registration_deadline=None
+            start_date="2026-11-29", end_date="2026-12-05", registration_deadline=None
         )
     )
-    with patch("app.main.gemini_service.extract_tournament_from_image", new=AsyncMock(return_value=mock_data)):
-        response = client.post("/extract", files={"poster": ("poster.png", io.BytesIO(DUMMY_PNG_BYTES), "image/png")})
+    with patch(
+        "app.main.gemini_service.extract_tournament_from_image",
+        new=AsyncMock(return_value=mock_data),
+    ):
+        response = client.post(
+            "/extract",
+            files={"poster": ("poster.png", io.BytesIO(DUMMY_PNG_BYTES), "image/png")},
+        )
         assert response.status_code == 200
         data = response.json()
         assert data["dates"]["start_date"] == "2026-11-29"
@@ -260,11 +271,21 @@ def test_multiple_contact_numbers_preserved():
             contact_numbers=["9669632910", "9876543210", "+91 9123456780"]
         )
     )
-    with patch("app.main.gemini_service.extract_tournament_from_image", new=AsyncMock(return_value=mock_data)):
-        response = client.post("/extract", files={"poster": ("poster.png", io.BytesIO(DUMMY_PNG_BYTES), "image/png")})
+    with patch(
+        "app.main.gemini_service.extract_tournament_from_image",
+        new=AsyncMock(return_value=mock_data),
+    ):
+        response = client.post(
+            "/extract",
+            files={"poster": ("poster.png", io.BytesIO(DUMMY_PNG_BYTES), "image/png")},
+        )
         assert response.status_code == 200
         data = response.json()
-        assert data["registration"]["contact_numbers"] == ["9669632910", "9876543210", "+91 9123456780"]
+        assert data["registration"]["contact_numbers"] == [
+            "9669632910",
+            "9876543210",
+            "+91 9123456780",
+        ]
 
 
 def test_missing_location_null_handling():
@@ -275,11 +296,17 @@ def test_missing_location_null_handling():
             address=None,
             city=None,
             state=None,
-            country=None
+            country=None,
         )
     )
-    with patch("app.main.gemini_service.extract_tournament_from_image", new=AsyncMock(return_value=mock_data)):
-        response = client.post("/extract", files={"poster": ("poster.png", io.BytesIO(DUMMY_PNG_BYTES), "image/png")})
+    with patch(
+        "app.main.gemini_service.extract_tournament_from_image",
+        new=AsyncMock(return_value=mock_data),
+    ):
+        response = client.post(
+            "/extract",
+            files={"poster": ("poster.png", io.BytesIO(DUMMY_PNG_BYTES), "image/png")},
+        )
         assert response.status_code == 200
         data = response.json()
         assert data["location"]["venue"] == "Indori Turf & Cafe"
@@ -296,11 +323,17 @@ def test_prize_extraction_schema():
             first_prize="₹50,000",
             second_prize="₹25,000",
             third_prize=None,
-            other_prizes=["Best Batsman - ₹2,000", "Best Bowler - ₹2,000"]
+            other_prizes=["Best Batsman - ₹2,000", "Best Bowler - ₹2,000"],
         )
     )
-    with patch("app.main.gemini_service.extract_tournament_from_image", new=AsyncMock(return_value=mock_data)):
-        response = client.post("/extract", files={"poster": ("poster.png", io.BytesIO(DUMMY_PNG_BYTES), "image/png")})
+    with patch(
+        "app.main.gemini_service.extract_tournament_from_image",
+        new=AsyncMock(return_value=mock_data),
+    ):
+        response = client.post(
+            "/extract",
+            files={"poster": ("poster.png", io.BytesIO(DUMMY_PNG_BYTES), "image/png")},
+        )
         assert response.status_code == 200
         data = response.json()
         assert data["prizes"]["first_prize"] == "₹50,000"
@@ -316,11 +349,17 @@ def test_fee_extraction_schema():
             registration_fee="₹500",
             team_fee="₹5,000",
             player_fee="₹500",
-            auction_fee="₹1,000"
+            auction_fee="₹1,000",
         )
     )
-    with patch("app.main.gemini_service.extract_tournament_from_image", new=AsyncMock(return_value=mock_data)):
-        response = client.post("/extract", files={"poster": ("poster.png", io.BytesIO(DUMMY_PNG_BYTES), "image/png")})
+    with patch(
+        "app.main.gemini_service.extract_tournament_from_image",
+        new=AsyncMock(return_value=mock_data),
+    ):
+        response = client.post(
+            "/extract",
+            files={"poster": ("poster.png", io.BytesIO(DUMMY_PNG_BYTES), "image/png")},
+        )
         assert response.status_code == 200
         data = response.json()
         assert data["fees"]["registration_fee"] == "₹500"
@@ -334,8 +373,14 @@ def test_qr_code_boolean():
     mock_data_with_qr = TournamentPosterExtraction(
         registration=RegistrationInfo(qr_code_present=True, registration_url=None)
     )
-    with patch("app.main.gemini_service.extract_tournament_from_image", new=AsyncMock(return_value=mock_data_with_qr)):
-        response = client.post("/extract", files={"poster": ("poster.png", io.BytesIO(DUMMY_PNG_BYTES), "image/png")})
+    with patch(
+        "app.main.gemini_service.extract_tournament_from_image",
+        new=AsyncMock(return_value=mock_data_with_qr),
+    ):
+        response = client.post(
+            "/extract",
+            files={"poster": ("poster.png", io.BytesIO(DUMMY_PNG_BYTES), "image/png")},
+        )
         assert response.status_code == 200
         data = response.json()
         assert data["registration"]["qr_code_present"] is True
@@ -347,11 +392,17 @@ def test_confidence_range_and_review_fields():
     mock_data = TournamentPosterExtraction(
         extraction=ExtractionMeta(
             confidence=0.72,
-            fields_needing_review=["location.address", "dates.auction_date"]
+            fields_needing_review=["location.address", "dates.auction_date"],
         )
     )
-    with patch("app.main.gemini_service.extract_tournament_from_image", new=AsyncMock(return_value=mock_data)):
-        response = client.post("/extract", files={"poster": ("poster.png", io.BytesIO(DUMMY_PNG_BYTES), "image/png")})
+    with patch(
+        "app.main.gemini_service.extract_tournament_from_image",
+        new=AsyncMock(return_value=mock_data),
+    ):
+        response = client.post(
+            "/extract",
+            files={"poster": ("poster.png", io.BytesIO(DUMMY_PNG_BYTES), "image/png")},
+        )
         assert response.status_code == 200
         data = response.json()
         assert 0.0 <= data["extraction"]["confidence"] <= 1.0
@@ -366,12 +417,21 @@ def test_additional_information_excludes_slogans():
         additional_information=[
             "Only Maheshwari Samaj members can participate",
             "10 overs per innings",
-            "White tennis ball will be used"
+            "White tennis ball will be used",
         ]
     )
-    with patch("app.main.gemini_service.extract_tournament_from_image", new=AsyncMock(return_value=mock_data)):
-        response = client.post("/extract", files={"poster": ("poster.png", io.BytesIO(DUMMY_PNG_BYTES), "image/png")})
+    with patch(
+        "app.main.gemini_service.extract_tournament_from_image",
+        new=AsyncMock(return_value=mock_data),
+    ):
+        response = client.post(
+            "/extract",
+            files={"poster": ("poster.png", io.BytesIO(DUMMY_PNG_BYTES), "image/png")},
+        )
         assert response.status_code == 200
         data = response.json()
         assert len(data["additional_information"]) == 3
-        assert "Only Maheshwari Samaj members can participate" in data["additional_information"]
+        assert (
+            "Only Maheshwari Samaj members can participate"
+            in data["additional_information"]
+        )
