@@ -108,10 +108,13 @@ class GeminiService:
         """
         client = self.get_client()
 
+        # Normalize MIME type for Gemini (Gemini requires image/jpeg, not image/jpg)
+        normalized_mime = "image/jpeg" if mime_type in ("image/jpg", "jpg") else mime_type
+
         try:
             image_part = types.Part.from_bytes(
                 data=image_bytes,
-                mime_type=mime_type,
+                mime_type=normalized_mime,
             )
 
             response = client.models.generate_content(
@@ -159,6 +162,12 @@ class GeminiService:
                     message="Gemini API Quota Exceeded",
                     status_code=429,
                     detail="Gemini API rate limit or quota exceeded. Please try again later.",
+                ) from e
+            elif "Unable to process input image" in error_message:
+                raise GeminiServiceException(
+                    message="Unprocessable Image",
+                    status_code=422,
+                    detail="Google Gemini was unable to decode or process the uploaded image. Please ensure you are uploading a valid, non-corrupted image file (JPEG, PNG, or WEBP) with visible content.",
                 ) from e
             else:
                 raise GeminiServiceException(
