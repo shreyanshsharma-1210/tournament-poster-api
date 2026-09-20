@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import os
 
@@ -138,7 +139,15 @@ class GeminiService:
             )
 
         except errors.APIError as e:
-            logger.error("Gemini API Error: %s", str(e))
+            sha256_hash = hashlib.sha256(image_bytes).hexdigest()
+            logger.error(
+                "GEMINI ERROR:\nexception_type=%s\nexception_message=%s\nmime_type=%s\nimage_size=%d\nsha256=%s",
+                type(e).__name__,
+                str(e),
+                mime_type,
+                len(image_bytes),
+                sha256_hash,
+            )
             error_message = str(e)
             if (
                 "API_KEY_INVALID" in error_message
@@ -175,7 +184,15 @@ class GeminiService:
             raise
 
         except Exception as e:
-            logger.exception("Unexpected error during Gemini extraction")
+            sha256_hash = hashlib.sha256(image_bytes).hexdigest()
+            logger.error(
+                "GEMINI ERROR:\nexception_type=%s\nexception_message=%s\nmime_type=%s\nimage_size=%d\nsha256=%s",
+                type(e).__name__,
+                str(e),
+                mime_type,
+                len(image_bytes),
+                sha256_hash,
+            )
             raise GeminiServiceException(
                 message="Poster extraction failed",
                 status_code=500,

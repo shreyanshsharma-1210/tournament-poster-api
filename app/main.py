@@ -1,4 +1,5 @@
 from io import BytesIO
+import hashlib
 import logging
 import os
 from typing import Annotated
@@ -30,6 +31,7 @@ logger = logging.getLogger("tournament_api")
 # Configuration
 MAX_FILE_SIZE_MB = int(os.getenv("MAX_FILE_SIZE_MB", "10"))
 MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
+DEBUG_UPLOAD = os.getenv("DEBUG_UPLOAD", "false").strip().lower() in ("1", "true", "yes")
 
 SUPPORTED_MIME_TYPES: set[str] = {
     "image/jpeg",
@@ -258,21 +260,66 @@ async def extract_tournament_poster(
     file_ext = os.path.splitext(filename.lower())[1] if filename else ""
 
     detected_format, detected_mime = detect_image_format_and_mime(image_bytes)
+    sha256_hash = hashlib.sha256(image_bytes).hexdigest()
+
+    # Pillow inspection
+    pillow_valid = False
+    width = None
+    height = None
+    pillow_format = None
+
+    try:
+        with Image.open(BytesIO(image_bytes)) as img:
+            pillow_valid = True
+            width = img.width
+            height = img.height
+            pillow_format = img.format
+    except Exception:
+        pass
 
     # 5. Diagnostic logging ONLY (do not expose in API response or log sensitive data)
     logger.info(
-        "Received upload:\n"
+        "UPLOAD DEBUG:\n"
         "filename=%s\n"
         "client_content_type=%s\n"
         "size=%d\n"
+        "sha256=%s\n"
         "detected_format=%s\n"
-        "detected_mime=%s",
+        "detected_mime=%s\n"
+        "pillow_valid=%s\n"
+        "width=%s\n"
+        "height=%s\n"
+        "pillow_format=%s\n"
+        "gemini_mime=%s\n"
+        "gemini_bytes=%d",
         filename,
         client_content_type,
         len(image_bytes),
+        sha256_hash,
         detected_format,
         detected_mime,
+        "true" if pillow_valid else "false",
+        width,
+        height,
+        pillow_format,
+        detected_mime,
+        len(image_bytes),
     )
+
+    debug_payload = {
+        "filename": filename,
+        "client_content_type": client_content_type,
+        "size": len(image_bytes),
+        "sha256": sha256_hash,
+        "detected_format": detected_format,
+        "detected_mime": detected_mime,
+        "pillow_valid": pillow_valid,
+        "width": width,
+        "height": height,
+        "pillow_format": pillow_format,
+        "gemini_mime": detected_mime,
+        "gemini_bytes": len(image_bytes),
+    }
 
     # 6. Validate detected image format
     if not detected_format or not detected_mime:
@@ -297,5 +344,10 @@ async def extract_tournament_poster(
         image_bytes=image_bytes,
         mime_type=detected_mime,
     )
+
+    if DEBUG_UPLOAD:
+        data = extraction_result.model_dump()
+        data["debug"] = debug_payload
+        return JSONResponse(status_code=200, content=data)
 
     return extraction_result

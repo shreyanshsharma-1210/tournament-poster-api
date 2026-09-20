@@ -594,3 +594,52 @@ def test_extract_corrupt_image_returns_422():
     assert data["error"] == "Unprocessable Entity"
     assert "corrupt or not a supported image format" in data["detail"]
 
+
+def test_extract_debug_upload_flag():
+    """Verify debug object is included when DEBUG_UPLOAD=true and omitted when false."""
+    from PIL import Image
+
+    img = Image.new("RGB", (50, 60), color="blue")
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG")
+    jpeg_bytes = buf.getvalue()
+
+    mock_service = AsyncMock(
+        return_value=TournamentPosterExtraction(
+            tournament=TournamentInfo(name="Debug Cup", sport="Cricket")
+        )
+    )
+
+    # 1. When DEBUG_UPLOAD is False (default)
+    with patch("app.main.DEBUG_UPLOAD", False), patch(
+        "app.main.gemini_service.extract_tournament_from_image", new=mock_service
+    ):
+        res_default = client.post(
+            "/extract",
+            files={"poster": ("poster.jpg", io.BytesIO(jpeg_bytes), "image/jpeg")},
+        )
+        assert res_default.status_code == 200
+        assert "debug" not in res_default.json()
+
+    # 2. When DEBUG_UPLOAD is True
+    with patch("app.main.DEBUG_UPLOAD", True), patch(
+        "app.main.gemini_service.extract_tournament_from_image", new=mock_service
+    ):
+        res_debug = client.post(
+            "/extract",
+            files={"poster": ("poster.jpg", io.BytesIO(jpeg_bytes), "image/jpeg")},
+        )
+        assert res_debug.status_code == 200
+        data = res_debug.json()
+        assert "debug" in data
+        debug = data["debug"]
+        assert debug["filename"] == "poster.jpg"
+        assert debug["detected_format"] == "JPEG"
+        assert debug["detected_mime"] == "image/jpeg"
+        assert debug["pillow_valid"] is True
+        assert debug["width"] == 50
+        assert debug["height"] == 60
+        assert debug["size"] == len(jpeg_bytes)
+        assert "sha256" in debug
+
+
