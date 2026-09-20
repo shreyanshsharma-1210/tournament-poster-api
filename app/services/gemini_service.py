@@ -5,8 +5,7 @@ import os
 
 from dotenv import load_dotenv
 from google import genai
-from google.genai import types
-from google.genai.errors import APIError
+from google.genai import errors, types
 
 from app.models import TournamentPosterExtraction
 
@@ -140,7 +139,7 @@ class GeminiService:
                 detail="Gemini API returned an empty response. Please check image clarity and try again.",
             )
 
-        except APIError as e:
+        except errors.APIError as e:
             logger.error("Gemini API Error: %s", str(e))
             error_message = str(e)
             if (
